@@ -1,152 +1,185 @@
 import json
 import pandas as pd
 from datetime import datetime
-import os
 
-# User Class: To handle user registration and login
+# User class for handling user data
 class User:
     def __init__(self, username, password):
         self.username = username
         self.password = password
 
-    def save_user(self):
-        # Check if the users.json file exists, if not create one with an empty dictionary
-        if os.path.exists('users.json'):
-            with open('users.json', 'r') as file:
-                users = json.load(file)
-        else:
-            users = {}
+    def to_dict(self):
+        return {
+            'username': self.username,
+            'password': self.password
+        }
 
-        # Add or update user in the dictionary
-        users[self.username] = self.password
-
-        # Write the updated users dictionary back to users.json
-        with open('users.json', 'w') as file:
-            json.dump(users, file, indent=4)
-        print(f"User {self.username} registered successfully!")
-
-    @staticmethod
-    def login(username, password):
-        # Ensure the users.json file exists
-        if os.path.exists('users.json'):
-            with open('users.json', 'r') as file:
-                users = json.load(file)
-                if username in users and users[username] == password:
-                    return True
-                return False
-        else:
-            print("No users registered.")
-            return False
-
-# FinanceRecord Class: To manage individual finance records (income/expenses)
+# FinanceRecord class for handling individual records of income/expenses
 class FinanceRecord:
-    def __init__(self, username, description, amount, category, date=None):
-        self.username = username
+    def __init__(self, description, amount, category, date):
         self.description = description
         self.amount = amount
         self.category = category
-        self.date = date if date else datetime.now().strftime('%Y-%m-%d')
+        self.date = date
 
-    def save_record(self):
-        # Ensure the finances.json file exists
-        if os.path.exists('finances.json'):
-            with open('finances.json', 'r') as file:
-                finances = json.load(file)
-        else:
-            finances = {}
-
-        # Add a new list for the user if not already present
-        if self.username not in finances:
-            finances[self.username] = []
-
-        # Add the new record to the user's financial records
-        finances[self.username].append({
+    def to_dict(self):
+        return {
             'description': self.description,
             'amount': self.amount,
             'category': self.category,
             'date': self.date
-        })
+        }
 
-        # Write the updated finances dictionary back to finances.json
-        with open('finances.json', 'w') as file:
-            json.dump(finances, file, indent=4)
-        print("Record added successfully!")
-
-# FinanceManager Class: To handle operations like adding records, generating reports
+# FinanceManager class to manage all financial data
 class FinanceManager:
-    def __init__(self, username):
-        self.username = username
+    def __init__(self, user_file='users.json', finance_file='finances.json'):
+        self.user_file = user_file
+        self.finance_file = finance_file
+        self.users = self.load_users()
+        self.finances = self.load_finances()
+        self.current_user = None  # To track the logged-in user
 
-    def add_record(self, description, amount, category):
-        record = FinanceRecord(self.username, description, amount, category)
-        record.save_record()
+    # Load user data from the JSON file
+    def load_users(self):
+        try:
+            with open(self.user_file, 'r') as file:
+                return json.load(file)
+        except FileNotFoundError:
+            return {}
 
+    # Load finance data from the JSON file
+    def load_finances(self):
+        try:
+            with open(self.finance_file, 'r') as file:
+                return json.load(file)
+        except FileNotFoundError:
+            return {}
+
+    # Save user data to the JSON file
+    def save_users(self):
+        with open(self.user_file, 'w') as file:
+            json.dump(self.users, file, indent=4)
+
+    # Save financial data to the JSON file
+    def save_finances(self):
+        with open(self.finance_file, 'w') as file:
+            json.dump(self.finances, file, indent=4)
+
+    # User registration
+    def register_user(self, username, password):
+        if username in self.users:
+            print(f"User {username} already exists.")
+            return False
+        self.users[username] = User(username, password).to_dict()
+        self.save_users()
+        print(f"User {username} registered successfully.")
+        return True
+
+    # User login
+    def login_user(self, username, password):
+        if username in self.users and self.users[username]['password'] == password:
+            self.current_user = username
+            print(f"Welcome {username}!")
+            return True
+        else:
+            print("Invalid credentials.")
+            return False
+
+    # Logout current user
+    def logout_user(self):
+        if self.current_user:
+            print(f"User {self.current_user} logged out.")
+            self.current_user = None
+        else:
+            print("No user is currently logged in.")
+
+    # Check if a user is logged in
+    def check_login(self):
+        if self.current_user is None:
+            print("Please log in first.")
+            return False
+        return True
+
+    # Add income/expense record for the logged-in user
+    def add_record(self, description, amount, category, date):
+        if not self.check_login():
+            return
+
+        record = FinanceRecord(description, amount, category, date).to_dict()
+        if self.current_user not in self.finances:
+            self.finances[self.current_user] = []  # Create a list for the user's records
+
+        self.finances[self.current_user].append(record)
+        self.save_finances()
+        print("Record added successfully.")
+
+    # Update an existing record for the logged-in user
+    def update_record(self, record_id, description, amount, category, date):
+        if not self.check_login():
+            return
+
+        if self.current_user not in self.finances or record_id >= len(self.finances[self.current_user]):
+            print("Invalid record ID.")
+            return
+
+        self.finances[self.current_user][record_id] = FinanceRecord(description, amount, category, date).to_dict()
+        self.save_finances()
+        print("Record updated successfully.")
+
+    # Delete a record for the logged-in user
+    def delete_record(self, record_id):
+        if not self.check_login():
+            return
+
+        if self.current_user not in self.finances or record_id >= len(self.finances[self.current_user]):
+            print("Invalid record ID.")
+            return
+
+        del self.finances[self.current_user][record_id]
+        self.save_finances()
+        print("Record deleted successfully.")
+
+    # Generate financial reports for the logged-in user using pandas
     def generate_report(self):
-        # Ensure the finances.json file exists
-        if os.path.exists('finances.json'):
-            with open('finances.json', 'r') as file:
-                finances = json.load(file)
-                if self.username in finances:
-                    df = pd.DataFrame(finances[self.username])
-                    return df
-                else:
-                    return pd.DataFrame([])
-        else:
-            print("No financial records found.")
-            return pd.DataFrame([])
+        if not self.check_login():
+            return
 
-# Function to load data
-def load_json_data(filename):
-    if os.path.exists(filename):
-        with open(filename, 'r') as file:
-            return json.load(file)
-    else:
-        return {}
+        if self.current_user not in self.finances or len(self.finances[self.current_user]) == 0:
+            print("No records found for this user.")
+            return
 
-# Main function
+        # Load data into a pandas DataFrame
+        df = pd.DataFrame(self.finances[self.current_user])
+
+        # Total income and expenses
+        print("Total Income and Expenses:")
+        print(df.groupby('category')['amount'].sum())
+
+        # Spending distribution by category
+        print("\nSpending Distribution by Category:")
+        print(df.groupby('category')['amount'].sum() / df['amount'].sum() * 100)
+
+        # Monthly or weekly trends
+        df['date'] = pd.to_datetime(df['date'])
+        print("\nMonthly Trends:")
+        print(df.groupby(df['date'].dt.to_period('M'))['amount'].sum())
+
+# Example usage
 if __name__ == "__main__":
-    users_data = load_json_data('users.json')
-    finances_data = load_json_data('finances.json')
+    manager = FinanceManager()
 
-    print("Welcome to Personal Finance Manager!")
-    action = input("Do you want to login or register? (login/register): ").strip().lower()
+    # Registering a new user
+    manager.register_user("john_doe", "password123")
 
-    if action == 'register':
-        username = input("Enter new username: ")
-        password = input("Enter new password: ")
-        new_user = User(username, password)
-        new_user.save_user()
+    # Logging in
+    manager.login_user("john_doe", "password123")
 
-    elif action == 'login':
-        username = input("Enter username: ")
-        password = input("Enter password: ")
+    # Adding financial records for the logged-in user
+    manager.add_record("Salary", 5000, "Income", "2024-01-10")
+    manager.add_record("Groceries", -200, "Expense", "2024-01-12")
 
-        if User.login(username, password):
-            print(f"Welcome back, {username}!")
-            manager = FinanceManager(username)
-            
-            while True:
-                print("\nOptions: add (Add record), report (Generate Report), exit (Exit)")
-                option = input("Choose an option: ").strip().lower()
+    # Generating financial report for the logged-in user
+    manager.generate_report()
 
-                if option == 'add':
-                    desc = input("Enter description: ")
-                    amount = float(input("Enter amount: "))
-                    category = input("Enter category (e.g. groceries, salary, rent): ")
-                    manager.add_record(desc, amount, category)
-
-                elif option == 'report':
-                    df = manager.generate_report()
-                    if df.empty:
-                        print("No financial records found.")
-                    else:
-                        print(df)
-                        print("Total Income/Expenses by Category:")
-                        print(df.groupby('category')['amount'].sum())
-
-                elif option == 'exit':
-                    break
-                else:
-                    print("Invalid option, please try again.")
-        else:
-            print("Login failed. Incorrect username or password.")
+    # Logging out
+    manager.logout_user()
